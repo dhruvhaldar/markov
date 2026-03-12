@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markov | Deep RL Workbench</title>
+    <link rel="stylesheet" href="material.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+    <header class="app-header">
+        <h1>Markov <span class="subtitle">RL Workbench</span></h1>
+    </header>
+
+    <main class="workbench">
+        <!-- Module 1: Gridworlds -->
+        <section class="module-card" id="module-gridworld">
+            <div class="card-header">
+                <h2>Tabular RL: Minotaur Maze</h2>
+            </div>
+            <div class="card-body">
+                <p>Train a discrete MDP using Dynamic Programming (Value Iteration).</p>
+                <div class="controls">
+                    <button class="btn-primary ripple" id="btn-train-maze">Run Value Iteration</button>
+                </div>
+                <div class="visualization" id="viz-maze">
+                    <!-- D3 heatmap will go here -->
+                </div>
+                <div class="logs" id="log-maze">Ready.</div>
+            </div>
+        </section>
+
+        <!-- Module 2: Function Approx -->
+        <section class="module-card" id="module-mountaincar">
+            <div class="card-header">
+                <h2>Linear Approx: Mountain Car</h2>
+            </div>
+            <div class="card-body">
+                <p>Train continuous states using Sarsa(λ) and a p=2 Fourier Basis.</p>
+                <div class="controls">
+                    <button class="btn-primary ripple" id="btn-train-mc">Train Sarsa(λ)</button>
+                </div>
+                <div class="visualization">
+                    <canvas id="chart-mc"></canvas>
+                </div>
+                <div class="logs" id="log-mc">Ready.</div>
+            </div>
+        </section>
+
+        <!-- Module 3: Deep RL -->
+        <section class="module-card" id="module-lunarlander">
+            <div class="card-header">
+                <h2>Deep RL: Lunar Lander</h2>
+            </div>
+            <div class="card-body">
+                <p>Train a Deep Q-Network or PPO agent to land the spacecraft safely.</p>
+                <div class="controls">
+                    <button class="btn-primary ripple" id="btn-train-dqn">Train DQN</button>
+                    <button class="btn-secondary ripple" id="btn-train-ppo">Train PPO</button>
+                </div>
+                <div class="visualization">
+                    <canvas id="chart-ll"></canvas>
+                </div>
+                <div class="logs" id="log-ll">Ready.</div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // JS logic will be appended here
+        const API_BASE = (window.location.hostname === 'localhost' || window.location.protocol === 'file:') ? 'http://127.0.0.1:8000' : ''; // Use relative path in production (Vercel)
+
+        function setupChart(canvasId, title) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Total Reward',
+                        data: [],
+                        borderColor: '#66FCF1',
+                        backgroundColor: 'rgba(102, 252, 241, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: { display: true, text: title, color: '#C5C6C7' },
+                        legend: { labels: { color: '#C5C6C7' } }
+                    },
+                    scales: {
+                        x: { ticks: { color: '#C5C6C7' }, grid: { color: '#1F2833' } },
+                        y: { ticks: { color: '#C5C6C7' }, grid: { color: '#1F2833' } }
+                    }
+                }
+            });
+        }
+
+        const chartMC = setupChart('chart-mc', 'Mountain Car Learning Curve');
+        const chartLL = setupChart('chart-ll', 'Lunar Lander Learning Curve');
+
+        function updateChart(chart, data) {
+            chart.data.labels = Array.from({length: data.length}, (_, i) => i + 1);
+            chart.data.datasets[0].data = data;
+            chart.update();
+        }
+
+        // Gridworld Viz
+        function renderMazePolicy(policyData) {
+            const container = d3.select("#viz-maze");
+            container.selectAll("*").remove();
+
+            // A simple fallback rendering for our mock policy data
+            container.append("p")
+                .style("color", "#66FCF1")
+                .text(`Loaded ${policyData.length} policy states.`);
+
+            // Create a small mock heatmap representing V(s)
+            const w = 200, h = 200;
+            const svg = container.append("svg").attr("width", w).attr("height", h);
+
+            const colorScale = d3.scaleSequential(d3.interpolateInferno)
+                                 .domain([-100, 100]);
+
+            const rectSize = w / 5;
+            for(let r=0; r<5; r++) {
+                for(let c=0; c<5; c++) {
+                    const val = (r==4 && c==4) ? 100 : ((r==0 && c==4) ? -100 : Math.random()*20 - 10);
+                    svg.append("rect")
+                       .attr("x", c*rectSize)
+                       .attr("y", r*rectSize)
+                       .attr("width", rectSize-2)
+                       .attr("height", rectSize-2)
+                       .attr("fill", colorScale(val))
+                       .attr("rx", 4);
+                }
+            }
+        }
+
+        // Button Listeners
+        document.getElementById('btn-train-maze').addEventListener('click', async () => {
+            const log = document.getElementById('log-maze');
+            log.innerText = "Training Value Iteration...";
+            try {
+                const res = await fetch(`${API_BASE}/api/train/gridworld/maze`, {method: 'POST'});
+                const data = await res.json();
+                if(data.status === 'success') {
+                    log.innerText = "Training complete.";
+                    renderMazePolicy(data.policy);
+                } else {
+                    log.innerText = "Error: " + data.detail;
+                }
+            } catch(e) { log.innerText = "Error: " + e; }
+        });
+
+        document.getElementById('btn-train-mc').addEventListener('click', async () => {
+            const log = document.getElementById('log-mc');
+            log.innerText = "Training Sarsa(λ)... (this may take a moment)";
+            try {
+                const res = await fetch(`${API_BASE}/api/train/mountain_car`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({episodes: 20, max_steps: 200})
+                });
+                const data = await res.json();
+                if(data.status === 'success') {
+                    log.innerText = "Training complete.";
+                    updateChart(chartMC, data.rewards);
+                } else {
+                    log.innerText = "Error: " + data.detail;
+                }
+            } catch(e) { log.innerText = "Error: " + e; }
+        });
+
+        document.getElementById('btn-train-dqn').addEventListener('click', async () => {
+            const log = document.getElementById('log-ll');
+            log.innerText = "Training DQN... (this may take a moment)";
+            try {
+                const res = await fetch(`${API_BASE}/api/train/lunar_lander/dqn`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({episodes: 15, max_steps: 300})
+                });
+                const data = await res.json();
+                if(data.status === 'success') {
+                    log.innerText = "Training complete (DQN).";
+                    updateChart(chartLL, data.rewards);
+                } else {
+                    log.innerText = "Error: " + data.detail;
+                }
+            } catch(e) { log.innerText = "Error: " + e; }
+        });
+
+        document.getElementById('btn-train-ppo').addEventListener('click', async () => {
+            const log = document.getElementById('log-ll');
+            log.innerText = "Training PPO... (this may take a moment)";
+            try {
+                const res = await fetch(`${API_BASE}/api/train/lunar_lander/ppo`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({episodes: 15, max_steps: 300})
+                });
+                const data = await res.json();
+                if(data.status === 'success') {
+                    log.innerText = "Training complete (PPO).";
+                    updateChart(chartLL, data.rewards);
+                } else {
+                    log.innerText = "Error: " + data.detail;
+                }
+            } catch(e) { log.innerText = "Error: " + e; }
+        });
+    </script>
+</body>
+</html>

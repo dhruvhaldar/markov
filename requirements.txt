@@ -1,0 +1,6 @@
+torch
+gym
+box2d-py
+numpy
+fastapi
+uvicorn
